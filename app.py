@@ -1,393 +1,507 @@
+# ===== MODULE START =====
 import streamlit as st
 
-st.set_page_config(page_title="VFSS Report Generator", layout="wide")
+# -----------------------------
+# Constants
+# -----------------------------
+CONSISTENCY_OPTIONS = [
+    "thin fluid",
+    "slightly thick fluid",
+    "mildly thick fluid",
+    "moderately thick fluid",
+    "extremely thick fluid",
+    "puree",
+    "minced and moist diet",
+    "soft and bite-sized diet",
+    "easy-to-chew diet",
+    "regular diet",
+    "other",
+]
 
-st.title("VFSS Report Generator")
-st.caption("Clinical version prototype for VFSS reporting")
+DELIVERY_OPTIONS = [
+    "teaspoon",
+    "tablepoon" if False else "tablespoon",  # keeps code readable while preserving valid option only
+    "half tablespoon",
+    "cup drinking",
+    "cup sip",
+    "sip with straw",
+    "straw",
+    "other",
+]
+
+EVENT_TYPE_OPTIONS = [
+    "trace penetration",
+    "penetration",
+    "aspiration",
+    "silent aspiration",
+]
+
+TIMING_OPTIONS = [
+    "before swallow",
+    "during swallow",
+    "after swallow",
+]
+
+AMOUNT_OPTIONS = [
+    "trace",
+    "small",
+    "mild",
+    "moderate",
+    "large",
+]
+
+RESPONSE_OPTIONS = [
+    "fully ejected",
+    "partially ejected",
+    "not ejected",
+    "cough present",
+    "no cough response",
+    "unable to follow commands to cough",
+]
+
+SUMMARY_DEFAULTS = {
+    "no aspiration or penetration overall": False,
+    "no aspiration or penetration for other consistencies": False,
+    "coughing not related to penetration/aspiration": False,
+    "throat clearing not related to penetration/aspiration": False,
+    "gagging not related to penetration/aspiration": False,
+    "unable to follow commands to cough": False,
+    "study ended in view of high risk for aspiration": False,
+}
+
 
 # -----------------------------
-# Helper functions
+# State helpers
 # -----------------------------
-def residue_text(site_vals):
-    parts = []
-    mapping = {
-        "Valleculae": "vallecular residue",
-        "Pyriform sinuses": "pyriform sinus residue",
-        "Posterior pharyngeal wall": "posterior pharyngeal wall residue",
+def default_trial_row() -> dict:
+    return {
+        "consistency": "thin fluid",
+        "custom_consistency": "",
+        "delivery": "cup drinking",
+        "custom_delivery": "",
     }
 
-    for site, phrase in mapping.items():
-        severity = site_vals.get(site, "None")
-        if severity != "None":
-            if severity == "Trace":
-                parts.append(f"trace {phrase}")
-            elif severity == "Mild":
-                parts.append(f"mild {phrase}")
-            elif severity == "Moderate":
-                parts.append(f"moderate {phrase}")
-            elif severity == "Severe":
-                parts.append(f"severe {phrase}")
-    return parts
 
-
-def airway_sentence(penetration, aspiration):
-    phrases = []
-
-    if penetration == "None":
-        pass
-    elif penetration == "Transient":
-        phrases.append("Transient laryngeal penetration was observed.")
-    elif penetration == "Repeated":
-        phrases.append("Repeated laryngeal penetration was observed.")
-    elif penetration == "To vocal folds":
-        phrases.append("Laryngeal penetration to the level of the vocal folds was observed.")
-
-    if aspiration == "None":
-        pass
-    elif aspiration == "Before swallow":
-        phrases.append("Aspiration occurred before swallow initiation.")
-    elif aspiration == "During swallow":
-        phrases.append("Aspiration occurred during the swallow.")
-    elif aspiration == "After swallow":
-        phrases.append("Aspiration occurred after the swallow due to pharyngeal residue.")
-    elif aspiration == "Silent aspiration":
-        phrases.append("Silent aspiration was observed.")
-
-    return " ".join(phrases)
-
-
-def oral_phase_sentence(findings):
-    phrases = []
-
-    if "Anterior spillage" in findings:
-        phrases.append("Anterior spillage was noted.")
-    if "Reduced bolus control" in findings:
-        phrases.append("Reduced oral bolus control was noted.")
-    if "Prolonged oral transit" in findings:
-        phrases.append("Oral transit was prolonged.")
-    if "Piecemal deglutition" in findings:
-        phrases.append("Piecemal deglutition was observed.")
-    if "Double swallow required" in findings:
-        phrases.append("Double swallow was required for clearance.")
-
-    return " ".join(phrases)
-
-
-def pharyngeal_phase_sentence(findings):
-    phrases = []
-
-    if "Delayed swallow trigger" in findings:
-        phrases.append("Swallow initiation was delayed.")
-    if "Reduced tongue base retraction" in findings:
-        phrases.append("Reduced tongue base retraction was noted.")
-    if "Reduced hyolaryngeal excursion" in findings:
-        phrases.append("Reduced hyolaryngeal excursion was noted.")
-    if "Reduced epiglottic inversion" in findings:
-        phrases.append("Reduced epiglottic inversion was noted.")
-    if "Reduced pharyngeal contraction" in findings:
-        phrases.append("Reduced pharyngeal contraction was noted.")
-    if "Cricopharyngeal dysfunction suspected" in findings:
-        phrases.append("Possible cricopharyngeal dysfunction was noted.")
-
-    return " ".join(phrases)
-
-
-def strategy_sentences(strategies):
-    mapping = {
-        "Chin tuck": "chin tuck",
-        "Head turn": "head turn",
-        "Effortful swallow": "effortful swallow",
-        "Double swallow": "double swallow",
-        "Small sips/bites": "small sips/bites",
-        "Alternate solid/liquid": "alternating solids and liquids",
-        "Slow rate": "slow rate of intake",
+def default_aspiration_row() -> dict:
+    return {
+        "consistency": "thin fluid",
+        "custom_consistency": "",
+        "delivery": "cup drinking",
+        "custom_delivery": "",
+        "event_type": "trace penetration",
+        "timing": "during swallow",
+        "amount": "trace",
+        "response": "fully ejected",
+        "note": "",
     }
-    results = [mapping[s] for s in strategies if s in mapping]
-    return results
 
 
-def build_consistency_paragraph(consistency_name, entry):
-    sentences = []
+def ensure_module_state() -> None:
+    if "vfss_trial_rows" not in st.session_state:
+        st.session_state.vfss_trial_rows = [default_trial_row()]
+    if "vfss_asp_rows" not in st.session_state:
+        st.session_state.vfss_asp_rows = [default_aspiration_row()]
+    if "vfss_summary_flags" not in st.session_state:
+        st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
+    if "vfss_copy_buffer" not in st.session_state:
+        st.session_state.vfss_copy_buffer = ""
 
-    delivery = entry["delivery"]
-    volume = entry["volume"]
 
-    intro = f"For {consistency_name.lower()} presented via {delivery.lower()} ({volume.lower()}),"
-    sentences.append(intro)
+def reset_module_state() -> None:
+    st.session_state.vfss_trial_rows = [default_trial_row()]
+    st.session_state.vfss_asp_rows = [default_aspiration_row()]
+    st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
+    st.session_state.vfss_copy_buffer = ""
 
-    oral = oral_phase_sentence(entry["findings"])
-    pharyngeal = pharyngeal_phase_sentence(entry["findings"])
-    residue = residue_text(entry["residue"])
-    airway = airway_sentence(entry["penetration"], entry["aspiration"])
 
-    detail_parts = []
-    if oral:
-        detail_parts.append(oral)
-    if pharyngeal:
-        detail_parts.append(pharyngeal)
-    if residue:
-        detail_parts.append(" ".join([f"{x} was noted." for x in residue]))
-    if airway:
-        detail_parts.append(airway)
+def load_normal_template() -> None:
+    st.session_state.vfss_trial_rows = [
+        {
+            "consistency": "thin fluid",
+            "custom_consistency": "",
+            "delivery": "cup drinking",
+            "custom_delivery": "",
+        },
+        {
+            "consistency": "regular diet",
+            "custom_consistency": "",
+            "delivery": "half tablespoon",
+            "custom_delivery": "",
+        },
+    ]
+    st.session_state.vfss_asp_rows = [default_aspiration_row()]
+    st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
+    st.session_state.vfss_summary_flags["no aspiration or penetration overall"] = True
 
-    if detail_parts:
-        sentences.append(" ".join(detail_parts))
+
+def load_high_aspiration_risk_template() -> None:
+    st.session_state.vfss_trial_rows = [
+        {
+            "consistency": "moderately thick fluid",
+            "custom_consistency": "",
+            "delivery": "tablespoon",
+            "custom_delivery": "",
+        }
+    ]
+    st.session_state.vfss_asp_rows = [
+        {
+            "consistency": "moderately thick fluid",
+            "custom_consistency": "",
+            "delivery": "tablespoon",
+            "custom_delivery": "",
+            "event_type": "silent aspiration",
+            "timing": "during swallow",
+            "amount": "moderate",
+            "response": "unable to follow commands to cough",
+            "note": "",
+        }
+    ]
+    st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
+    st.session_state.vfss_summary_flags["unable to follow commands to cough"] = True
+    st.session_state.vfss_summary_flags["study ended in view of high risk for aspiration"] = True
+
+
+def add_trial_row() -> None:
+    st.session_state.vfss_trial_rows.append(default_trial_row())
+
+
+def add_aspiration_row() -> None:
+    st.session_state.vfss_asp_rows.append(default_aspiration_row())
+
+
+def remove_trial_row(index: int) -> None:
+    rows = st.session_state.vfss_trial_rows
+    if len(rows) > 1:
+        rows.pop(index)
+
+
+def remove_aspiration_row(index: int) -> None:
+    rows = st.session_state.vfss_asp_rows
+    if len(rows) > 1:
+        rows.pop(index)
+
+
+# -----------------------------
+# Formatting helpers
+# -----------------------------
+def resolve_consistency(row: dict) -> str:
+    value = row.get("consistency", "")
+    if value == "other":
+        custom = row.get("custom_consistency", "").strip()
+        return custom if custom else ""
+    return value.strip()
+
+
+def resolve_delivery(row: dict) -> str:
+    value = row.get("delivery", "")
+    if value == "other":
+        custom = row.get("custom_delivery", "").strip()
+        return custom if custom else ""
+    return value.strip()
+
+
+def format_trial_item(row: dict) -> str:
+    consistency = resolve_consistency(row)
+    delivery = resolve_delivery(row)
+    if consistency and delivery:
+        return f"{consistency} ({delivery})"
+    if consistency:
+        return consistency
+    return ""
+
+
+def format_list_with_and(items: list[str]) -> str:
+    items = [item for item in items if item]
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f" and {items[-1]}"
+
+
+def get_trialed_consistencies_sentence(rows: list[dict]) -> str:
+    items = [format_trial_item(row) for row in rows]
+    items = [item for item in items if item]
+    if not items:
+        return ""
+    return f"The patient was fed {format_list_with_and(items)}."
+
+
+def sentence_case(text: str) -> str:
+    if not text:
+        return ""
+    return text[0].upper() + text[1:]
+
+
+def get_aspiration_row_sentence(row: dict) -> str:
+    consistency = resolve_consistency(row)
+    delivery = resolve_delivery(row)
+    event_type = row.get("event_type", "").strip()
+    timing = row.get("timing", "").strip()
+    amount = row.get("amount", "").strip()
+    response = row.get("response", "").strip()
+    note = row.get("note", "").strip()
+
+    subject = format_trial_item(
+        {
+            "consistency": consistency,
+            "delivery": delivery,
+            "custom_consistency": "",
+            "custom_delivery": "",
+        }
+    )
+    if not subject:
+        return ""
+
+    descriptor = " ".join(part for part in [amount, event_type, timing] if part)
+    base = f"{sentence_case(subject)}: {descriptor} was seen"
+    if response:
+        base += f", {response}"
+    if note:
+        cleaned_note = note.rstrip(".")
+        base += f". {sentence_case(cleaned_note)}."
     else:
-        sentences.append("No significant abnormality was identified.")
+        base += "."
+    return base
 
-    return " ".join(sentences)
 
-
-def build_impression(all_entries):
-    abnormal_consistencies = []
-    aspiration_consistencies = []
-    penetration_consistencies = []
-    residue_consistencies = []
-
-    for c_name, entry in all_entries.items():
-        has_abnormal = False
-
-        if entry["findings"]:
-            has_abnormal = True
-        if any(v != "None" for v in entry["residue"].values()):
-            has_abnormal = True
-            residue_consistencies.append(c_name)
-        if entry["penetration"] != "None":
-            has_abnormal = True
-            penetration_consistencies.append(c_name)
-        if entry["aspiration"] != "None":
-            has_abnormal = True
-            aspiration_consistencies.append(c_name)
-
-        if has_abnormal:
-            abnormal_consistencies.append(c_name)
+def get_aspiration_findings_text(rows: list[dict], summary_flags: dict) -> str:
+    if summary_flags.get("no aspiration or penetration overall", False):
+        return "No aspiration or penetration was seen."
 
     lines = []
+    for row in rows:
+        sentence = get_aspiration_row_sentence(row)
+        if sentence:
+            lines.append(sentence)
 
-    if not abnormal_consistencies:
-        lines.append("Functional oropharyngeal swallowing with no significant penetration, aspiration, or residue identified during the tested consistencies.")
-        return " ".join(lines)
+    if summary_flags.get("no aspiration or penetration for other consistencies", False):
+        lines.append("No aspiration or penetration was seen during trials for other consistencies.")
+    if summary_flags.get("coughing not related to penetration/aspiration", False):
+        lines.append("Coughing in the study was not related to penetration or aspiration.")
+    if summary_flags.get("throat clearing not related to penetration/aspiration", False):
+        lines.append("Throat clearing in the study was not related to penetration or aspiration.")
+    if summary_flags.get("gagging not related to penetration/aspiration", False):
+        lines.append("Gagging in the study was not related to penetration or aspiration.")
+    if summary_flags.get("unable to follow commands to cough", False):
+        lines.append("The patient did not follow commands to cough.")
+    if summary_flags.get("study ended in view of high risk for aspiration", False):
+        lines.append("The study ended in view of high risk for aspiration.")
 
-    lines.append(
-        f"Oropharyngeal dysphagia was noted across the following tested consistencies: {', '.join(abnormal_consistencies)}."
+    return "\n".join(lines).strip()
+
+
+def build_report(rows_trial: list[dict], rows_asp: list[dict], summary_flags: dict) -> str:
+    lines = ["VIDEOFLUOROSCOPY - BARIUM SWALLOW", ""]
+    trial_sentence = get_trialed_consistencies_sentence(rows_trial)
+    if trial_sentence:
+        lines.append(trial_sentence)
+        lines.append("")
+    lines.append("[ASPIRATION FINDINGS]")
+    aspiration_text = get_aspiration_findings_text(rows_asp, summary_flags)
+    lines.append(aspiration_text if aspiration_text else "")
+    return "\n".join(lines).strip()
+
+
+# -----------------------------
+# UI rendering helpers
+# -----------------------------
+def render_trial_row(index: int) -> None:
+    row = st.session_state.vfss_trial_rows[index]
+
+    st.markdown(f"**Trialed consistency #{index + 1}**")
+    c1, c2, c3 = st.columns([2.2, 2.2, 1.0])
+
+    with c1:
+        row["consistency"] = st.selectbox(
+            "Consistency",
+            CONSISTENCY_OPTIONS,
+            index=CONSISTENCY_OPTIONS.index(row["consistency"]) if row["consistency"] in CONSISTENCY_OPTIONS else 0,
+            key=f"trial_consistency_{index}",
+        )
+        if row["consistency"] == "other":
+            row["custom_consistency"] = st.text_input(
+                "Custom consistency",
+                value=row.get("custom_consistency", ""),
+                key=f"trial_custom_consistency_{index}",
+            )
+
+    with c2:
+        row["delivery"] = st.selectbox(
+            "Delivery method",
+            DELIVERY_OPTIONS,
+            index=DELIVERY_OPTIONS.index(row["delivery"]) if row["delivery"] in DELIVERY_OPTIONS else 0,
+            key=f"trial_delivery_{index}",
+        )
+        if row["delivery"] == "other":
+            row["custom_delivery"] = st.text_input(
+                "Custom delivery method",
+                value=row.get("custom_delivery", ""),
+                key=f"trial_custom_delivery_{index}",
+            )
+
+    with c3:
+        st.write("")
+        st.write("")
+        if st.button("Remove", key=f"remove_trial_{index}", use_container_width=True):
+            remove_trial_row(index)
+            st.rerun()
+
+
+def render_aspiration_row(index: int) -> None:
+    row = st.session_state.vfss_asp_rows[index]
+
+    st.markdown(f"**Aspiration finding #{index + 1}**")
+    c1, c2 = st.columns(2)
+
+    with c1:
+        row["consistency"] = st.selectbox(
+            "Consistency",
+            CONSISTENCY_OPTIONS,
+            index=CONSISTENCY_OPTIONS.index(row["consistency"]) if row["consistency"] in CONSISTENCY_OPTIONS else 0,
+            key=f"asp_consistency_{index}",
+        )
+        if row["consistency"] == "other":
+            row["custom_consistency"] = st.text_input(
+                "Custom consistency",
+                value=row.get("custom_consistency", ""),
+                key=f"asp_custom_consistency_{index}",
+            )
+
+        row["delivery"] = st.selectbox(
+            "Delivery method",
+            DELIVERY_OPTIONS,
+            index=DELIVERY_OPTIONS.index(row["delivery"]) if row["delivery"] in DELIVERY_OPTIONS else 0,
+            key=f"asp_delivery_{index}",
+        )
+        if row["delivery"] == "other":
+            row["custom_delivery"] = st.text_input(
+                "Custom delivery method",
+                value=row.get("custom_delivery", ""),
+                key=f"asp_custom_delivery_{index}",
+            )
+
+        row["event_type"] = st.selectbox(
+            "Event type",
+            EVENT_TYPE_OPTIONS,
+            index=EVENT_TYPE_OPTIONS.index(row["event_type"]) if row["event_type"] in EVENT_TYPE_OPTIONS else 0,
+            key=f"asp_event_type_{index}",
+        )
+
+        row["timing"] = st.selectbox(
+            "Timing",
+            TIMING_OPTIONS,
+            index=TIMING_OPTIONS.index(row["timing"]) if row["timing"] in TIMING_OPTIONS else 0,
+            key=f"asp_timing_{index}",
+        )
+
+    with c2:
+        row["amount"] = st.selectbox(
+            "Amount",
+            AMOUNT_OPTIONS,
+            index=AMOUNT_OPTIONS.index(row["amount"]) if row["amount"] in AMOUNT_OPTIONS else 0,
+            key=f"asp_amount_{index}",
+        )
+
+        row["response"] = st.selectbox(
+            "Response",
+            RESPONSE_OPTIONS,
+            index=RESPONSE_OPTIONS.index(row["response"]) if row["response"] in RESPONSE_OPTIONS else 0,
+            key=f"asp_response_{index}",
+        )
+
+        row["note"] = st.text_area(
+            "Note",
+            value=row.get("note", ""),
+            key=f"asp_note_{index}",
+            height=100,
+        )
+
+        st.write("")
+        if st.button("Remove", key=f"remove_asp_{index}", use_container_width=True):
+            remove_aspiration_row(index)
+            st.rerun()
+
+
+def render_summary_checkboxes() -> None:
+    st.markdown("**Aspiration summary**")
+    for label in SUMMARY_DEFAULTS:
+        st.session_state.vfss_summary_flags[label] = st.checkbox(
+            label,
+            value=st.session_state.vfss_summary_flags.get(label, False),
+            key=f"summary_{label}",
+        )
+
+
+# -----------------------------
+# Module main
+# -----------------------------
+ensure_module_state()
+
+st.subheader("VFSS Prototype Module: Trialed Consistencies + Aspiration Findings")
+
+toolbar_cols = st.columns([1, 1, 1, 1])
+with toolbar_cols[0]:
+    if st.button("Clear Form", use_container_width=True):
+        reset_module_state()
+        st.rerun()
+with toolbar_cols[1]:
+    if st.button("Load Normal Template", use_container_width=True):
+        load_normal_template()
+        st.rerun()
+with toolbar_cols[2]:
+    if st.button("Load High Aspiration Risk Template", use_container_width=True):
+        load_high_aspiration_risk_template()
+        st.rerun()
+
+left_col, right_col = st.columns([1, 1])
+
+with left_col:
+    st.markdown("### B. Trialed consistencies")
+    for i in range(len(st.session_state.vfss_trial_rows)):
+        render_trial_row(i)
+        st.divider()
+
+    if st.button("Add Trialed Consistency", use_container_width=True):
+        add_trial_row()
+        st.rerun()
+
+    st.markdown("### E. Aspiration Findings")
+    for i in range(len(st.session_state.vfss_asp_rows)):
+        render_aspiration_row(i)
+        st.divider()
+
+    if st.button("Add Aspiration Finding", use_container_width=True):
+        add_aspiration_row()
+        st.rerun()
+
+    render_summary_checkboxes()
+
+with right_col:
+    st.markdown("### Report Preview")
+
+    report_text = build_report(
+        st.session_state.vfss_trial_rows,
+        st.session_state.vfss_asp_rows,
+        st.session_state.vfss_summary_flags,
+    )
+    st.session_state.vfss_copy_buffer = report_text
+
+    st.text_area(
+        "Generated Report",
+        value=report_text,
+        height=520,
+        key="vfss_report_preview",
     )
 
-    if penetration_consistencies:
-        lines.append(
-            f"Laryngeal penetration was observed with {', '.join(penetration_consistencies)}."
-        )
+    st.markdown("**Copy Report**")
+    st.text_area(
+        "Select all and copy manually",
+        value=st.session_state.vfss_copy_buffer,
+        height=160,
+        key="vfss_copy_area",
+    )
 
-    if aspiration_consistencies:
-        lines.append(
-            f"Aspiration was observed with {', '.join(aspiration_consistencies)}."
-        )
-
-    if residue_consistencies:
-        lines.append(
-            f"Pharyngeal residue was present with {', '.join(residue_consistencies)}."
-        )
-
-    return " ".join(lines)
-
-
-def build_recommendations(global_strategies, aspiration_present):
-    recs = []
-
-    if aspiration_present:
-        recs.append("Consider diet modification and strict aspiration precautions based on overall clinical context.")
-
-    strategy_list = strategy_sentences(global_strategies)
-    if strategy_list:
-        recs.append("Compensatory strategies trialed with potential benefit include: " + ", ".join(strategy_list) + ".")
-
-    recs.append("Clinical correlation is recommended.")
-    recs.append("Please integrate these findings with bedside swallowing performance and overall pulmonary / nutritional status.")
-
-    return recs
-
-
-# -----------------------------
-# Input area
-# -----------------------------
-st.header("Study Information")
-
-col1, col2 = st.columns(2)
-with col1:
-    patient_name = st.text_input("Patient Name")
-    mrn = st.text_input("MRN / ID")
-with col2:
-    study_date = st.date_input("Study Date")
-    examiner = st.text_input("Examiner")
-
-tested_consistencies = st.multiselect(
-    "Tested consistencies",
-    [
-        "Thin liquid",
-        "Slightly thick liquid",
-        "Mildly thick liquid",
-        "Moderately thick liquid",
-        "Extremely thick liquid",
-        "Puree",
-        "Soft solid",
-        "Regular solid",
-    ],
-    default=["Thin liquid"],
-)
-
-st.header("Consistency-specific Findings")
-
-all_entries = {}
-
-for consistency in tested_consistencies:
-    with st.expander(consistency, expanded=True):
-        c1, c2 = st.columns(2)
-
-        with c1:
-            delivery = st.selectbox(
-                f"{consistency} - Delivery method",
-                ["Teaspoon", "Cup sip", "Straw", "Self-fed", "Assisted feeding"],
-                key=f"{consistency}_delivery",
-            )
-
-            volume = st.selectbox(
-                f"{consistency} - Volume",
-                ["Small", "Moderate", "Large"],
-                key=f"{consistency}_volume",
-            )
-
-            findings = st.multiselect(
-                f"{consistency} - Findings",
-                [
-                    "Anterior spillage",
-                    "Reduced bolus control",
-                    "Prolonged oral transit",
-                    "Piecemal deglutition",
-                    "Delayed swallow trigger",
-                    "Reduced tongue base retraction",
-                    "Reduced hyolaryngeal excursion",
-                    "Reduced epiglottic inversion",
-                    "Reduced pharyngeal contraction",
-                    "Double swallow required",
-                    "Cricopharyngeal dysfunction suspected",
-                ],
-                key=f"{consistency}_findings",
-            )
-
-        with c2:
-            penetration = st.selectbox(
-                f"{consistency} - Penetration",
-                ["None", "Transient", "Repeated", "To vocal folds"],
-                key=f"{consistency}_penetration",
-            )
-
-            aspiration = st.selectbox(
-                f"{consistency} - Aspiration",
-                ["None", "Before swallow", "During swallow", "After swallow", "Silent aspiration"],
-                key=f"{consistency}_aspiration",
-            )
-
-            st.markdown("**Residue severity**")
-            valleculae = st.selectbox(
-                f"{consistency} - Valleculae",
-                ["None", "Trace", "Mild", "Moderate", "Severe"],
-                key=f"{consistency}_valleculae",
-            )
-            pyriform = st.selectbox(
-                f"{consistency} - Pyriform sinuses",
-                ["None", "Trace", "Mild", "Moderate", "Severe"],
-                key=f"{consistency}_pyriform",
-            )
-            ppw = st.selectbox(
-                f"{consistency} - Posterior pharyngeal wall",
-                ["None", "Trace", "Mild", "Moderate", "Severe"],
-                key=f"{consistency}_ppw",
-            )
-
-        all_entries[consistency] = {
-            "delivery": delivery,
-            "volume": volume,
-            "findings": findings,
-            "penetration": penetration,
-            "aspiration": aspiration,
-            "residue": {
-                "Valleculae": valleculae,
-                "Pyriform sinuses": pyriform,
-                "Posterior pharyngeal wall": ppw,
-            },
-        }
-
-st.header("Compensatory Strategies / Global Recommendations")
-
-global_strategies = st.multiselect(
-    "Strategies trialed / considered",
-    [
-        "Chin tuck",
-        "Head turn",
-        "Effortful swallow",
-        "Double swallow",
-        "Small sips/bites",
-        "Alternate solid/liquid",
-        "Slow rate",
-    ],
-)
-
-free_text_comment = st.text_area("Additional comments", height=120)
-
-# -----------------------------
-# Generate report
-# -----------------------------
-report_lines = []
-
-report_lines.append("VFSS REPORT")
-report_lines.append("")
-report_lines.append(f"Patient Name: {patient_name if patient_name else '[Not entered]'}")
-report_lines.append(f"MRN / ID: {mrn if mrn else '[Not entered]'}")
-report_lines.append(f"Study Date: {study_date}")
-report_lines.append(f"Examiner: {examiner if examiner else '[Not entered]'}")
-report_lines.append("")
-
-report_lines.append("Procedure:")
-report_lines.append(
-    "Videofluoroscopic swallowing study was performed in lateral view with selected consistencies and delivery methods as outlined below."
-)
-report_lines.append("")
-
-report_lines.append("Findings by Consistency:")
-if tested_consistencies:
-    for c in tested_consistencies:
-        report_lines.append(build_consistency_paragraph(c, all_entries[c]))
-else:
-    report_lines.append("No consistency selected.")
-report_lines.append("")
-
-report_lines.append("Impression:")
-report_lines.append(build_impression(all_entries if tested_consistencies else {}))
-report_lines.append("")
-
-aspiration_present = any(
-    entry["aspiration"] != "None" for entry in all_entries.values()
-)
-
-report_lines.append("Recommendations:")
-for rec in build_recommendations(global_strategies, aspiration_present):
-    report_lines.append(f"- {rec}")
-
-if free_text_comment.strip():
-    report_lines.append("")
-    report_lines.append("Additional Comments:")
-    report_lines.append(free_text_comment.strip())
-
-report_text = "\n".join(report_lines)
-
-# -----------------------------
-# Output
-# -----------------------------
-st.header("Generated Report")
-st.text_area("Report Output", report_text, height=650)
-
-st.download_button(
-    label="Download report as TXT",
-    data=report_text,
-    file_name="vfss_report.txt",
-    mime="text/plain",
-)
+# ===== MODULE END =====
