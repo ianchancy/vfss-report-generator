@@ -112,12 +112,20 @@ def ensure_module_state():
     if "vfss_copy_buffer" not in st.session_state:
         st.session_state.vfss_copy_buffer = ""
 
+    if "vfss_generated_report" not in st.session_state:
+        st.session_state.vfss_generated_report = ""
+
+    if "vfss_copy_notice" not in st.session_state:
+        st.session_state.vfss_copy_notice = ""
+
 
 def reset_module_state():
     st.session_state.vfss_trial_rows = [default_trial_row()]
     st.session_state.vfss_asp_rows = [default_aspiration_row()]
     st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
     st.session_state.vfss_copy_buffer = ""
+    st.session_state.vfss_generated_report = ""
+    st.session_state.vfss_copy_notice = ""
 
 
 def add_trial_row():
@@ -136,53 +144,6 @@ def add_aspiration_row():
 def remove_aspiration_row(index: int):
     if len(st.session_state.vfss_asp_rows) > 1:
         st.session_state.vfss_asp_rows.pop(index)
-
-
-def load_normal_template():
-    st.session_state.vfss_trial_rows = [
-        {
-            "consistency": "thin fluid",
-            "custom_consistency": "",
-            "delivery_methods": ["cup drinking"],
-            "custom_delivery_methods": "",
-        },
-        {
-            "consistency": "regular diet",
-            "custom_consistency": "",
-            "delivery_methods": ["half tablespoon"],
-            "custom_delivery_methods": "",
-        },
-    ]
-    st.session_state.vfss_asp_rows = [default_aspiration_row()]
-    st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
-    st.session_state.vfss_summary_flags["no aspiration or penetration overall"] = True
-
-
-def load_high_aspiration_risk_template():
-    st.session_state.vfss_trial_rows = [
-        {
-            "consistency": "moderately thick fluid",
-            "custom_consistency": "",
-            "delivery_methods": ["tablespoon"],
-            "custom_delivery_methods": "",
-        }
-    ]
-    st.session_state.vfss_asp_rows = [
-        {
-            "consistency": "moderately thick fluid",
-            "custom_consistency": "",
-            "delivery_methods": ["tablespoon"],
-            "custom_delivery_methods": "",
-            "event_type": "silent aspiration",
-            "timing": "during swallow",
-            "amount": "moderate",
-            "response": "unable to follow commands to cough",
-            "note": "",
-        }
-    ]
-    st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
-    st.session_state.vfss_summary_flags["unable to follow commands to cough"] = True
-    st.session_state.vfss_summary_flags["study ended in view of high risk for aspiration"] = True
 
 
 # -----------------------------
@@ -219,11 +180,11 @@ def resolve_delivery_methods(row):
         else:
             resolved.append(method)
 
-    seen = []
+    deduped = []
     for item in resolved:
-        if item not in seen:
-            seen.append(item)
-    return seen
+        if item not in deduped:
+            deduped.append(item)
+    return deduped
 
 
 def format_consistency_with_methods(row):
@@ -284,7 +245,8 @@ def get_aspiration_row_sentence(row):
 
     if note:
         cleaned_note = note.rstrip(".")
-        sentence += f" {cleaned_note[0].upper() + cleaned_note[1:] if cleaned_note else ''}."
+        if cleaned_note:
+            sentence += f" {cleaned_note[0].upper() + cleaned_note[1:]}."
     return sentence
 
 
@@ -472,21 +434,35 @@ def render_summary_checkboxes():
 # -----------------------------
 ensure_module_state()
 
-st.subheader("VFSS Prototype Module: Trialed Consistencies + Aspiration Findings")
+st.subheader("B. Trialed consistencies + E. Aspiration Findings")
 
-toolbar_cols = st.columns(4)
-with toolbar_cols[0]:
+top_cols = st.columns([1, 1, 1, 2])
+
+with top_cols[0]:
     if st.button("Clear Form", use_container_width=True):
         reset_module_state()
         st.rerun()
-with toolbar_cols[1]:
-    if st.button("Load Normal Template", use_container_width=True):
-        load_normal_template()
-        st.rerun()
-with toolbar_cols[2]:
-    if st.button("Load High Aspiration Risk Template", use_container_width=True):
-        load_high_aspiration_risk_template()
-        st.rerun()
+
+with top_cols[1]:
+    if st.button("Generate Report", use_container_width=True):
+        report_text = build_report(
+            st.session_state.vfss_trial_rows,
+            st.session_state.vfss_asp_rows,
+            st.session_state.vfss_summary_flags,
+        )
+        st.session_state.vfss_generated_report = report_text
+        st.session_state.vfss_copy_buffer = report_text
+        st.session_state.vfss_copy_notice = "Report generated."
+
+with top_cols[2]:
+    if st.button("Copy Report", use_container_width=True):
+        st.session_state.vfss_copy_buffer = st.session_state.vfss_generated_report
+        if st.session_state.vfss_generated_report.strip():
+            st.session_state.vfss_copy_notice = (
+                "Report ready for copying. Use the text box below, then press Ctrl+C."
+            )
+        else:
+            st.session_state.vfss_copy_notice = "No report available to copy."
 
 left_col, right_col = st.columns([1.05, 1])
 
@@ -511,29 +487,25 @@ with left_col:
 
     render_summary_checkboxes()
 
-# 先在所有 widgets render 完後才組報告，避免右側拿到舊值
-report_text = build_report(
-    st.session_state.vfss_trial_rows,
-    st.session_state.vfss_asp_rows,
-    st.session_state.vfss_summary_flags,
-)
-st.session_state.vfss_copy_buffer = report_text
-
 with right_col:
     st.markdown("### Report Preview")
     st.text_area(
         "Generated Report",
-        value=report_text,
+        value=st.session_state.vfss_generated_report,
         height=520,
         key="vfss_report_preview",
     )
 
-    st.markdown("**Copy Report**")
+    st.markdown("### Copy Report")
+    if st.session_state.vfss_copy_notice:
+        st.info(st.session_state.vfss_copy_notice)
+
     st.text_area(
-        "Select all and copy manually",
+        "Copy-ready text",
         value=st.session_state.vfss_copy_buffer,
-        height=180,
+        height=220,
         key="vfss_copy_area",
+        help="Click inside the box, select the text, then copy it with Ctrl+C.",
     )
 
 # ===== MODULE END =====
