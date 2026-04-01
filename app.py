@@ -20,7 +20,7 @@ CONSISTENCY_OPTIONS = [
 
 DELIVERY_OPTIONS = [
     "teaspoon",
-    "tablepoon" if False else "tablespoon",  # keeps code readable while preserving valid option only
+    "tablespoon",
     "half tablespoon",
     "cup drinking",
     "cup sip",
@@ -71,23 +71,23 @@ SUMMARY_DEFAULTS = {
 
 
 # -----------------------------
-# State helpers
+# Default row factories
 # -----------------------------
-def default_trial_row() -> dict:
+def default_trial_row():
     return {
         "consistency": "thin fluid",
         "custom_consistency": "",
-        "delivery": "cup drinking",
-        "custom_delivery": "",
+        "delivery_methods": ["teaspoon"],
+        "custom_delivery_methods": "",
     }
 
 
-def default_aspiration_row() -> dict:
+def default_aspiration_row():
     return {
         "consistency": "thin fluid",
         "custom_consistency": "",
-        "delivery": "cup drinking",
-        "custom_delivery": "",
+        "delivery_methods": ["cup drinking"],
+        "custom_delivery_methods": "",
         "event_type": "trace penetration",
         "timing": "during swallow",
         "amount": "trace",
@@ -96,37 +96,61 @@ def default_aspiration_row() -> dict:
     }
 
 
-def ensure_module_state() -> None:
+# -----------------------------
+# State management
+# -----------------------------
+def ensure_module_state():
     if "vfss_trial_rows" not in st.session_state:
         st.session_state.vfss_trial_rows = [default_trial_row()]
+
     if "vfss_asp_rows" not in st.session_state:
         st.session_state.vfss_asp_rows = [default_aspiration_row()]
+
     if "vfss_summary_flags" not in st.session_state:
         st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
+
     if "vfss_copy_buffer" not in st.session_state:
         st.session_state.vfss_copy_buffer = ""
 
 
-def reset_module_state() -> None:
+def reset_module_state():
     st.session_state.vfss_trial_rows = [default_trial_row()]
     st.session_state.vfss_asp_rows = [default_aspiration_row()]
     st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
     st.session_state.vfss_copy_buffer = ""
 
 
-def load_normal_template() -> None:
+def add_trial_row():
+    st.session_state.vfss_trial_rows.append(default_trial_row())
+
+
+def remove_trial_row(index: int):
+    if len(st.session_state.vfss_trial_rows) > 1:
+        st.session_state.vfss_trial_rows.pop(index)
+
+
+def add_aspiration_row():
+    st.session_state.vfss_asp_rows.append(default_aspiration_row())
+
+
+def remove_aspiration_row(index: int):
+    if len(st.session_state.vfss_asp_rows) > 1:
+        st.session_state.vfss_asp_rows.pop(index)
+
+
+def load_normal_template():
     st.session_state.vfss_trial_rows = [
         {
             "consistency": "thin fluid",
             "custom_consistency": "",
-            "delivery": "cup drinking",
-            "custom_delivery": "",
+            "delivery_methods": ["cup drinking"],
+            "custom_delivery_methods": "",
         },
         {
             "consistency": "regular diet",
             "custom_consistency": "",
-            "delivery": "half tablespoon",
-            "custom_delivery": "",
+            "delivery_methods": ["half tablespoon"],
+            "custom_delivery_methods": "",
         },
     ]
     st.session_state.vfss_asp_rows = [default_aspiration_row()]
@@ -134,21 +158,21 @@ def load_normal_template() -> None:
     st.session_state.vfss_summary_flags["no aspiration or penetration overall"] = True
 
 
-def load_high_aspiration_risk_template() -> None:
+def load_high_aspiration_risk_template():
     st.session_state.vfss_trial_rows = [
         {
             "consistency": "moderately thick fluid",
             "custom_consistency": "",
-            "delivery": "tablespoon",
-            "custom_delivery": "",
+            "delivery_methods": ["tablespoon"],
+            "custom_delivery_methods": "",
         }
     ]
     st.session_state.vfss_asp_rows = [
         {
             "consistency": "moderately thick fluid",
             "custom_consistency": "",
-            "delivery": "tablespoon",
-            "custom_delivery": "",
+            "delivery_methods": ["tablespoon"],
+            "custom_delivery_methods": "",
             "event_type": "silent aspiration",
             "timing": "during swallow",
             "amount": "moderate",
@@ -161,57 +185,11 @@ def load_high_aspiration_risk_template() -> None:
     st.session_state.vfss_summary_flags["study ended in view of high risk for aspiration"] = True
 
 
-def add_trial_row() -> None:
-    st.session_state.vfss_trial_rows.append(default_trial_row())
-
-
-def add_aspiration_row() -> None:
-    st.session_state.vfss_asp_rows.append(default_aspiration_row())
-
-
-def remove_trial_row(index: int) -> None:
-    rows = st.session_state.vfss_trial_rows
-    if len(rows) > 1:
-        rows.pop(index)
-
-
-def remove_aspiration_row(index: int) -> None:
-    rows = st.session_state.vfss_asp_rows
-    if len(rows) > 1:
-        rows.pop(index)
-
-
 # -----------------------------
 # Formatting helpers
 # -----------------------------
-def resolve_consistency(row: dict) -> str:
-    value = row.get("consistency", "")
-    if value == "other":
-        custom = row.get("custom_consistency", "").strip()
-        return custom if custom else ""
-    return value.strip()
-
-
-def resolve_delivery(row: dict) -> str:
-    value = row.get("delivery", "")
-    if value == "other":
-        custom = row.get("custom_delivery", "").strip()
-        return custom if custom else ""
-    return value.strip()
-
-
-def format_trial_item(row: dict) -> str:
-    consistency = resolve_consistency(row)
-    delivery = resolve_delivery(row)
-    if consistency and delivery:
-        return f"{consistency} ({delivery})"
-    if consistency:
-        return consistency
-    return ""
-
-
-def format_list_with_and(items: list[str]) -> str:
-    items = [item for item in items if item]
+def format_list_with_and(items):
+    items = [x for x in items if x]
     if not items:
         return ""
     if len(items) == 1:
@@ -221,57 +199,101 @@ def format_list_with_and(items: list[str]) -> str:
     return ", ".join(items[:-1]) + f" and {items[-1]}"
 
 
-def get_trialed_consistencies_sentence(rows: list[dict]) -> str:
-    items = [format_trial_item(row) for row in rows]
-    items = [item for item in items if item]
+def resolve_consistency(row):
+    consistency = row.get("consistency", "").strip()
+    if consistency == "other":
+        return row.get("custom_consistency", "").strip()
+    return consistency
+
+
+def resolve_delivery_methods(row):
+    methods = row.get("delivery_methods", [])
+    custom_text = row.get("custom_delivery_methods", "").strip()
+
+    resolved = []
+    for method in methods:
+        if method == "other":
+            if custom_text:
+                custom_parts = [x.strip() for x in custom_text.split(",") if x.strip()]
+                resolved.extend(custom_parts)
+        else:
+            resolved.append(method)
+
+    seen = []
+    for item in resolved:
+        if item not in seen:
+            seen.append(item)
+    return seen
+
+
+def format_consistency_with_methods(row):
+    consistency = resolve_consistency(row)
+    methods = resolve_delivery_methods(row)
+
+    if not consistency:
+        return ""
+
+    if methods:
+        return f"{consistency} ({', '.join(methods)})"
+    return consistency
+
+
+def get_trialed_consistencies_sentence(rows):
+    items = [format_consistency_with_methods(row) for row in rows]
+    items = [x for x in items if x]
     if not items:
         return ""
     return f"The patient was fed {format_list_with_and(items)}."
 
 
-def sentence_case(text: str) -> str:
-    if not text:
-        return ""
-    return text[0].upper() + text[1:]
+def build_event_phrase(amount, event_type):
+    amount = amount.strip()
+    event_type = event_type.strip()
+
+    if event_type == "trace penetration":
+        return "trace penetration"
+
+    if event_type in ["penetration", "aspiration", "silent aspiration"]:
+        if amount:
+            return f"{amount} {event_type}"
+        return event_type
+
+    return event_type
 
 
-def get_aspiration_row_sentence(row: dict) -> str:
-    consistency = resolve_consistency(row)
-    delivery = resolve_delivery(row)
-    event_type = row.get("event_type", "").strip()
-    timing = row.get("timing", "").strip()
-    amount = row.get("amount", "").strip()
-    response = row.get("response", "").strip()
-    note = row.get("note", "").strip()
-
-    subject = format_trial_item(
-        {
-            "consistency": consistency,
-            "delivery": delivery,
-            "custom_consistency": "",
-            "custom_delivery": "",
-        }
-    )
+def get_aspiration_row_sentence(row):
+    subject = format_consistency_with_methods(row)
     if not subject:
         return ""
 
-    descriptor = " ".join(part for part in [amount, event_type, timing] if part)
-    base = f"{sentence_case(subject)}: {descriptor} was seen"
+    event_phrase = build_event_phrase(
+        row.get("amount", ""),
+        row.get("event_type", ""),
+    )
+    timing = row.get("timing", "").strip()
+    response = row.get("response", "").strip()
+    note = row.get("note", "").strip()
+
+    sentence = f"{subject.capitalize()}: {event_phrase}"
+    if timing:
+        sentence += f" {timing}"
+    sentence += " was seen"
     if response:
-        base += f", {response}"
+        sentence += f", {response}"
+    sentence += "."
+
     if note:
         cleaned_note = note.rstrip(".")
-        base += f". {sentence_case(cleaned_note)}."
-    else:
-        base += "."
-    return base
+        sentence += f" {cleaned_note[0].upper() + cleaned_note[1:] if cleaned_note else ''}."
+    return sentence
 
 
-def get_aspiration_findings_text(rows: list[dict], summary_flags: dict) -> str:
+def get_aspiration_findings_text(rows, summary_flags):
     if summary_flags.get("no aspiration or penetration overall", False):
         return "No aspiration or penetration was seen."
 
     lines = []
+
     for row in rows:
         sentence = get_aspiration_row_sentence(row)
         if sentence:
@@ -279,40 +301,50 @@ def get_aspiration_findings_text(rows: list[dict], summary_flags: dict) -> str:
 
     if summary_flags.get("no aspiration or penetration for other consistencies", False):
         lines.append("No aspiration or penetration was seen during trials for other consistencies.")
+
     if summary_flags.get("coughing not related to penetration/aspiration", False):
         lines.append("Coughing in the study was not related to penetration or aspiration.")
+
     if summary_flags.get("throat clearing not related to penetration/aspiration", False):
         lines.append("Throat clearing in the study was not related to penetration or aspiration.")
+
     if summary_flags.get("gagging not related to penetration/aspiration", False):
         lines.append("Gagging in the study was not related to penetration or aspiration.")
+
     if summary_flags.get("unable to follow commands to cough", False):
         lines.append("The patient did not follow commands to cough.")
+
     if summary_flags.get("study ended in view of high risk for aspiration", False):
         lines.append("The study ended in view of high risk for aspiration.")
 
     return "\n".join(lines).strip()
 
 
-def build_report(rows_trial: list[dict], rows_asp: list[dict], summary_flags: dict) -> str:
+def build_report(trial_rows, aspiration_rows, summary_flags):
     lines = ["VIDEOFLUOROSCOPY - BARIUM SWALLOW", ""]
-    trial_sentence = get_trialed_consistencies_sentence(rows_trial)
+
+    trial_sentence = get_trialed_consistencies_sentence(trial_rows)
     if trial_sentence:
         lines.append(trial_sentence)
         lines.append("")
+
     lines.append("[ASPIRATION FINDINGS]")
-    aspiration_text = get_aspiration_findings_text(rows_asp, summary_flags)
-    lines.append(aspiration_text if aspiration_text else "")
+
+    aspiration_text = get_aspiration_findings_text(aspiration_rows, summary_flags)
+    if aspiration_text:
+        lines.append(aspiration_text)
+
     return "\n".join(lines).strip()
 
 
 # -----------------------------
-# UI rendering helpers
+# UI renderers
 # -----------------------------
-def render_trial_row(index: int) -> None:
+def render_trial_row(index):
     row = st.session_state.vfss_trial_rows[index]
 
     st.markdown(f"**Trialed consistency #{index + 1}**")
-    c1, c2, c3 = st.columns([2.2, 2.2, 1.0])
+    c1, c2, c3 = st.columns([2.2, 2.6, 1.0])
 
     with c1:
         row["consistency"] = st.selectbox(
@@ -329,17 +361,17 @@ def render_trial_row(index: int) -> None:
             )
 
     with c2:
-        row["delivery"] = st.selectbox(
-            "Delivery method",
+        row["delivery_methods"] = st.multiselect(
+            "Delivery method(s)",
             DELIVERY_OPTIONS,
-            index=DELIVERY_OPTIONS.index(row["delivery"]) if row["delivery"] in DELIVERY_OPTIONS else 0,
-            key=f"trial_delivery_{index}",
+            default=row.get("delivery_methods", []),
+            key=f"trial_delivery_methods_{index}",
         )
-        if row["delivery"] == "other":
-            row["custom_delivery"] = st.text_input(
-                "Custom delivery method",
-                value=row.get("custom_delivery", ""),
-                key=f"trial_custom_delivery_{index}",
+        if "other" in row["delivery_methods"]:
+            row["custom_delivery_methods"] = st.text_input(
+                "Custom delivery method(s) (comma separated)",
+                value=row.get("custom_delivery_methods", ""),
+                key=f"trial_custom_delivery_methods_{index}",
             )
 
     with c3:
@@ -350,7 +382,7 @@ def render_trial_row(index: int) -> None:
             st.rerun()
 
 
-def render_aspiration_row(index: int) -> None:
+def render_aspiration_row(index):
     row = st.session_state.vfss_asp_rows[index]
 
     st.markdown(f"**Aspiration finding #{index + 1}**")
@@ -370,17 +402,17 @@ def render_aspiration_row(index: int) -> None:
                 key=f"asp_custom_consistency_{index}",
             )
 
-        row["delivery"] = st.selectbox(
-            "Delivery method",
+        row["delivery_methods"] = st.multiselect(
+            "Delivery method(s)",
             DELIVERY_OPTIONS,
-            index=DELIVERY_OPTIONS.index(row["delivery"]) if row["delivery"] in DELIVERY_OPTIONS else 0,
-            key=f"asp_delivery_{index}",
+            default=row.get("delivery_methods", []),
+            key=f"asp_delivery_methods_{index}",
         )
-        if row["delivery"] == "other":
-            row["custom_delivery"] = st.text_input(
-                "Custom delivery method",
-                value=row.get("custom_delivery", ""),
-                key=f"asp_custom_delivery_{index}",
+        if "other" in row["delivery_methods"]:
+            row["custom_delivery_methods"] = st.text_input(
+                "Custom delivery method(s) (comma separated)",
+                value=row.get("custom_delivery_methods", ""),
+                key=f"asp_custom_delivery_methods_{index}",
             )
 
         row["event_type"] = st.selectbox(
@@ -425,7 +457,7 @@ def render_aspiration_row(index: int) -> None:
             st.rerun()
 
 
-def render_summary_checkboxes() -> None:
+def render_summary_checkboxes():
     st.markdown("**Aspiration summary**")
     for label in SUMMARY_DEFAULTS:
         st.session_state.vfss_summary_flags[label] = st.checkbox(
@@ -436,13 +468,13 @@ def render_summary_checkboxes() -> None:
 
 
 # -----------------------------
-# Module main
+# Main UI
 # -----------------------------
 ensure_module_state()
 
 st.subheader("VFSS Prototype Module: Trialed Consistencies + Aspiration Findings")
 
-toolbar_cols = st.columns([1, 1, 1, 1])
+toolbar_cols = st.columns(4)
 with toolbar_cols[0]:
     if st.button("Clear Form", use_container_width=True):
         reset_module_state()
@@ -456,7 +488,7 @@ with toolbar_cols[2]:
         load_high_aspiration_risk_template()
         st.rerun()
 
-left_col, right_col = st.columns([1, 1])
+left_col, right_col = st.columns([1.05, 1])
 
 with left_col:
     st.markdown("### B. Trialed consistencies")
@@ -479,16 +511,16 @@ with left_col:
 
     render_summary_checkboxes()
 
+# 先在所有 widgets render 完後才組報告，避免右側拿到舊值
+report_text = build_report(
+    st.session_state.vfss_trial_rows,
+    st.session_state.vfss_asp_rows,
+    st.session_state.vfss_summary_flags,
+)
+st.session_state.vfss_copy_buffer = report_text
+
 with right_col:
     st.markdown("### Report Preview")
-
-    report_text = build_report(
-        st.session_state.vfss_trial_rows,
-        st.session_state.vfss_asp_rows,
-        st.session_state.vfss_summary_flags,
-    )
-    st.session_state.vfss_copy_buffer = report_text
-
     st.text_area(
         "Generated Report",
         value=report_text,
@@ -500,7 +532,7 @@ with right_col:
     st.text_area(
         "Select all and copy manually",
         value=st.session_state.vfss_copy_buffer,
-        height=160,
+        height=180,
         key="vfss_copy_area",
     )
 
