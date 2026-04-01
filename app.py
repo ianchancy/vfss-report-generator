@@ -109,11 +109,11 @@ def ensure_module_state():
     if "vfss_summary_flags" not in st.session_state:
         st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
 
-    if "vfss_copy_buffer" not in st.session_state:
-        st.session_state.vfss_copy_buffer = ""
-
     if "vfss_generated_report" not in st.session_state:
         st.session_state.vfss_generated_report = ""
+
+    if "vfss_copy_buffer" not in st.session_state:
+        st.session_state.vfss_copy_buffer = ""
 
     if "vfss_copy_notice" not in st.session_state:
         st.session_state.vfss_copy_notice = ""
@@ -123,8 +123,8 @@ def reset_module_state():
     st.session_state.vfss_trial_rows = [default_trial_row()]
     st.session_state.vfss_asp_rows = [default_aspiration_row()]
     st.session_state.vfss_summary_flags = SUMMARY_DEFAULTS.copy()
-    st.session_state.vfss_copy_buffer = ""
     st.session_state.vfss_generated_report = ""
+    st.session_state.vfss_copy_buffer = ""
     st.session_state.vfss_copy_notice = ""
 
 
@@ -493,7 +493,6 @@ with right_col:
         "Generated Report",
         value=st.session_state.vfss_generated_report,
         height=520,
-        key="vfss_report_preview",
     )
 
     st.markdown("### Copy Report")
@@ -504,7 +503,6 @@ with right_col:
         "Copy-ready text",
         value=st.session_state.vfss_copy_buffer,
         height=220,
-        key="vfss_copy_area",
         help="Click inside the box, select the text, then copy it with Ctrl+C.",
     )
 
